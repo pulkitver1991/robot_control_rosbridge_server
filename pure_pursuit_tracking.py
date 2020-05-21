@@ -122,8 +122,6 @@ def pixels2meter(pix, invert=True, GUI_MAX_COORD=GUI_MAX_COORD):
     YdistPerPix = ARENA_MAX_COORD[1] * M2m / GUI_MAX_COORD[1]
     cx = []
     cy = []
-    print cx
-    print cy
     for i in range(len(x_vals)):
         if  x_vals[i] > GUI_MAX_COORD[0] or \
             x_vals[i] < GUI_MIN_COORD[0] or \
@@ -182,7 +180,8 @@ rospy.wait_for_message("/trajectory", PoseArray)
 pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
 cx = pros_traj['x']
 cy = pros_traj['y']
-
+print cx
+print cy
 lastIndex = len(cx) - 1
 # initial state of the robot
 state = State(x=cx[0], y=cy[0], yaw=0, v=0.0)
