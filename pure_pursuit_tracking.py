@@ -1,19 +1,10 @@
 #!/usr/bin/env python
 from __future__ import division
 ######################################################################
-# IIIT Hyderabad Software Distribution License
-#
-# Copyright (c) 2017, IIIT-H
-# All Rights Reserved.
-#
-# For a full description see the file named LICENSE.
-#
+# IIIT Hyderabad 
 ######################################################################
-# Author: Pulkit Verma
-
-# Paper followed for stanley controller
-# https://www.ri.cmu.edu/pub_files/2009/2/Automatic_Steering_\
-# Methods_for_Autonomous_Automobile_Path_Tracking.pdf
+#Pulkit Verma
+######################################################################
 
 import rospy
 import tf
