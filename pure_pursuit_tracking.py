@@ -93,8 +93,8 @@ def calc_target_index(state, cx, cy):
 
 # shutdown ROS on interrupt
 def shutdown():
-    global track_done, no_of_msgs
-    track_done.publish(no_of_msgs)
+    global track_done
+    track_done.publish(1)
     rospy.loginfo("Shutting Down Tracking")
     rospy.sleep(1)
 
@@ -105,6 +105,7 @@ def pub_odometry(data_x, data_y, theta, frame_id, child_frame_id):
     odom_msg.child_frame_id = child_frame_id#child_frame_id
     odom_msg.pose.pose.position = Point(data_x, data_y, 0)
     odom_msg.pose.pose.orientation = Quaternion(*tf.transformations.quaternion_from_euler(0,0,theta))
+    print data_x, data_y
     return odom_msg
 
 def cbTrajectory(msg):
@@ -175,47 +176,50 @@ frame_id = rospy.get_param('~frame_id','world')
 rospy.Subscriber('trajectory', PoseArray, cbTrajectory)
 rospy.on_shutdown(shutdown)
 rate = rospy.Rate(10)
-rospy.wait_for_message("/trajectory", PoseArray)
+try:
+    while(True):
+        rospy.wait_for_message("/trajectory", PoseArray)
 
-pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
-cx = pros_traj['x']
-cy = pros_traj['y']
-print cx
-print cy
-lastIndex = len(cx) - 1
-# initial state of the robot
-state = State(x=cx[0], y=cy[0], yaw=0, v=0.0)
-x = [state.x]
-y = [state.y]
-yaw = [state.yaw]
-v = [state.v]
-target_ind = calc_target_index(state, cx, cy)
+        pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
+        cx = pros_traj['x']
+        cy = pros_traj['y']
+        lastIndex = len(cx) - 1
+        # initial state of the robot
+        state = State(x=cx[0], y=cy[0], yaw=0, v=0.0)
+        x = [state.x]
+        y = [state.y]
+        yaw = [state.yaw]
+        v = [state.v]
+        target_ind = calc_target_index(state, cx, cy)
 
-# MatplotLib initializations
-fig = plt.figure()
-ax2 = fig.add_subplot(111, aspect='equal')
-no_of_msgs = 0
-while (lastIndex > target_ind) and not rospy.is_shutdown() and sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2) > 0.1:
-    no_of_msgs = no_of_msgs + 1
-    print sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2)
-    ai = PIDControl(target_speed, state.v)
-    di, target_ind = pure_pursuit_control(state, cx, cy, target_ind)
-    state = update(state, ai, di)
-    x.append(state.x)
-    y.append(state.y)
-    yaw.append(state.yaw)
-    v.append(state.v)
-    pix_data = meter2pixel([[state.x, state.y]], invert=True, GUI_MAX_COORD = GUI_MAX_COORD)
-    print pix_data
-    odom_data = pub_odometry(pix_data['x'][0], pix_data['y'][0], 0, frame_id, child_frame_id)
-    odom_pub.publish(odom_data)
+        # MatplotLib initializations
+        fig = plt.figure()
+        ax2 = fig.add_subplot(111, aspect='equal')
+        while (lastIndex > target_ind) and not rospy.is_shutdown() and sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2) > 0.1:
+            print sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2)
+            ai = PIDControl(target_speed, state.v)
+            di, target_ind = pure_pursuit_control(state, cx, cy, target_ind)
+            state = update(state, ai, di)
+            x.append(state.x)
+            y.append(state.y)
+            yaw.append(state.yaw)
+            v.append(state.v)
+            pix_data = meter2pixel([[state.x, state.y]], invert=True, GUI_MAX_COORD = GUI_MAX_COORD)
+            odom_data = pub_odometry(pix_data['x'][0], pix_data['y'][0], 0, frame_id, child_frame_id)
+            odom_pub.publish(odom_data)
 
-    # plot the values 
-    if show_animation:
-        ax2.cla()
-        ax2.plot(cx, cy, ".r", label="course")
-        ax2.plot(x, y, "-b", label="trajectory")
-        ax2.plot(cx[target_ind], cy[target_ind], "xg", label="target")
-        ax2.axis("equal")
-        plt.title("Speed[m/s]:" + str(state.v)[:4])
-        plt.pause(0.001)
+            # plot the values 
+            if show_animation:
+                ax2.cla()
+                ax2.plot(cx, cy, ".r", label="course")
+                ax2.plot(x, y, "-b", label="trajectory")
+                ax2.plot(cx[target_ind], cy[target_ind], "xg", label="target")
+                ax2.axis("equal")
+                plt.title("Speed[m/s]:" + str(state.v)[:4])
+                plt.pause(0.001)
+
+except KeyboardInterrupt:
+    print "Pressed Ctrl+C and the coded is completed"
+    pass
+    
+
