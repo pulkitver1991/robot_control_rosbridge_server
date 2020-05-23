@@ -9,7 +9,7 @@ from __future__ import division
 import rospy
 import tf
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Int64 
+from std_msgs.msg import Int64, Int8
 from geometry_msgs.msg import Point, Quaternion, PoseWithCovarianceStamped, PoseArray
 
 import math
@@ -28,7 +28,7 @@ class State:
 k = 0.1  # look forward gain
 Lfc = 0.01  # look-ahead distance
 Kp = 1.0  # speed propotional gain
-dt = 0.03  # [s]
+dt = 0.05  # [s]
 L = 0.1  # [m] wheel base of vehicle
 target_speed = 0.1
 
@@ -41,7 +41,7 @@ ARENA_MAX_COORD = (10, 8)
 
 # ROS Variables 
 trajectory = []
-
+tracking_status = None
 # ****************** Stanley Functions ********************* 
 # Update the Robot Location
 def update(state, a, delta):
@@ -112,7 +112,11 @@ def cbTrajectory(msg):
     global trajectory
     for i in range(len(msg.poses)):
         trajectory.append([msg.poses[i].position.x, msg.poses[i].position.y])
+    print len(trajectory)
 
+def cbTrackStatus(msg):
+    global tracking_status
+    tracking_status = msg.data
 
 def pixels2meter(pix, invert=True, GUI_MAX_COORD=GUI_MAX_COORD):
     x_vals = list(zip(*pix)[0])
@@ -168,55 +172,64 @@ def meter2pixel(met, invert=True, GUI_MAX_COORD=GUI_MAX_COORD):
 # ROS initializations
 rospy.init_node('tracking', anonymous=True)
 
-odom_pub = rospy.Publisher('/odom', Odometry, queue_size=10)
+odom_pub = rospy.Publisher('/odom', Odometry, queue_size=1)
 track_done = rospy.Publisher('/track_done', Int64, queue_size=10)
 child_frame_id = rospy.get_param('~child_frame_id','base_link')
 frame_id = rospy.get_param('~frame_id','world')
 
-rospy.Subscriber('trajectory', PoseArray, cbTrajectory)
+rospy.Subscriber('trajectory', PoseArray, cbTrajectory, queue_size=10)
+rospy.Subscriber('start_tracking', Int8, cbTrackStatus)
 rospy.on_shutdown(shutdown)
 rate = rospy.Rate(10)
 try:
     while(True):
         rospy.wait_for_message("/trajectory", PoseArray)
+        rospy.wait_for_message("/start_tracking", Int8)
+        print tracking_status
+        if tracking_status == 1:
+            pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
+            print pros_traj
+            cx = pros_traj['x']
+            cy = pros_traj['y']
+            lastIndex = len(cx) - 1
+            # initial state of the robot
+            state = State(x=cx[0], y=cy[0], yaw=0, v=0.0)
+            x = [state.x]
+            y = [state.y]
+            yaw = [state.yaw]
+            v = [state.v]
+            target_ind = calc_target_index(state, cx, cy)
 
-        pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
-        cx = pros_traj['x']
-        cy = pros_traj['y']
-        lastIndex = len(cx) - 1
-        # initial state of the robot
-        state = State(x=cx[0], y=cy[0], yaw=0, v=0.0)
-        x = [state.x]
-        y = [state.y]
-        yaw = [state.yaw]
-        v = [state.v]
-        target_ind = calc_target_index(state, cx, cy)
+            # MatplotLib initializations
+            fig = plt.figure()
+            ax2 = fig.add_subplot(111, aspect='equal')
+            while (lastIndex > target_ind) and not rospy.is_shutdown() and sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2) > 0.1:
+                print sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2)
+                ai = PIDControl(target_speed, state.v)
+                di, target_ind = pure_pursuit_control(state, cx, cy, target_ind)
+                state = update(state, ai, di)
+                x.append(state.x)
+                y.append(state.y)
+                yaw.append(state.yaw)
+                v.append(state.v)
+                pix_data = meter2pixel([[state.x, state.y]], invert=True, GUI_MAX_COORD = GUI_MAX_COORD)
+                odom_data = pub_odometry(pix_data['x'][0], pix_data['y'][0], 0, frame_id, child_frame_id)
+                odom_pub.publish(odom_data)
 
-        # MatplotLib initializations
-        fig = plt.figure()
-        ax2 = fig.add_subplot(111, aspect='equal')
-        while (lastIndex > target_ind) and not rospy.is_shutdown() and sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2) > 0.1:
-            print sqrt( (cx[-1] - state.x)**2 + (cy[-1] - state.y)**2)
-            ai = PIDControl(target_speed, state.v)
-            di, target_ind = pure_pursuit_control(state, cx, cy, target_ind)
-            state = update(state, ai, di)
-            x.append(state.x)
-            y.append(state.y)
-            yaw.append(state.yaw)
-            v.append(state.v)
-            pix_data = meter2pixel([[state.x, state.y]], invert=True, GUI_MAX_COORD = GUI_MAX_COORD)
-            odom_data = pub_odometry(pix_data['x'][0], pix_data['y'][0], 0, frame_id, child_frame_id)
-            odom_pub.publish(odom_data)
-
-            # plot the values 
-            if show_animation:
-                ax2.cla()
-                ax2.plot(cx, cy, ".r", label="course")
-                ax2.plot(x, y, "-b", label="trajectory")
-                ax2.plot(cx[target_ind], cy[target_ind], "xg", label="target")
-                ax2.axis("equal")
-                plt.title("Speed[m/s]:" + str(state.v)[:4])
-                plt.pause(0.001)
+                # plot the values 
+                if show_animation:
+                    ax2.cla()
+                    ax2.plot(cx, cy, ".r", label="course")
+                    ax2.plot(x, y, "-b", label="trajectory")
+                    ax2.plot(cx[target_ind], cy[target_ind], "xg", label="target")
+                    ax2.axis("equal")
+                    plt.title("Speed[m/s]:" + str(state.v)[:4])
+                    plt.pause(0.001)
+            trajectory = []
+        elif (tracking_status == 2):
+            print (len(trajectory))
+            trajectory = []
+            print "mission aborted"
 
 except KeyboardInterrupt:
     print "Pressed Ctrl+C and the coded is completed"
