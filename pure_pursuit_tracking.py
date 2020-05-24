@@ -112,7 +112,8 @@ def cbTrajectory(msg):
     global trajectory
     for i in range(len(msg.poses)):
         trajectory.append([msg.poses[i].position.x, msg.poses[i].position.y])
-    print len(trajectory)
+        print len(trajectory)
+    print "***************************************************"
 
 def cbTrackStatus(msg):
     global tracking_status
@@ -183,9 +184,8 @@ rospy.on_shutdown(shutdown)
 rate = rospy.Rate(10)
 try:
     while(True):
-        rospy.wait_for_message("/trajectory", PoseArray)
-        rospy.wait_for_message("/start_tracking", Int8)
-        print tracking_status
+        # rospy.wait_for_message("/trajectory", PoseArray)
+        # rospy.wait_for_message("/start_tracking", Int8)
         if tracking_status == 1:
             pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
             print pros_traj
@@ -215,6 +215,10 @@ try:
                 pix_data = meter2pixel([[state.x, state.y]], invert=True, GUI_MAX_COORD = GUI_MAX_COORD)
                 odom_data = pub_odometry(pix_data['x'][0], pix_data['y'][0], 0, frame_id, child_frame_id)
                 odom_pub.publish(odom_data)
+                if (tracking_status == 3):
+                    trajectory = []
+                    tracking_status = None
+                    break
 
                 # plot the values 
                 if show_animation:
@@ -226,10 +230,12 @@ try:
                     plt.title("Speed[m/s]:" + str(state.v)[:4])
                     plt.pause(0.001)
             trajectory = []
+            tracking_status = None
+
         elif (tracking_status == 2):
-            print (len(trajectory))
             trajectory = []
-            print "mission aborted"
+            tracking_status = None
+            print "User does not want the robot to follow the trajectory"
 
 except KeyboardInterrupt:
     print "Pressed Ctrl+C and the coded is completed"
