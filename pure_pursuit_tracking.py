@@ -6,6 +6,8 @@ from __future__ import division
 #Pulkit Verma
 ######################################################################
 
+import subprocess
+
 import rospy
 import tf
 from nav_msgs.msg import Odometry
@@ -42,6 +44,8 @@ ARENA_MAX_COORD = (10, 8)
 # ROS Variables 
 trajectory = []
 tracking_status = None
+joystick_status = None
+robot_id = None
 # ****************** Stanley Functions ********************* 
 # Update the Robot Location
 def update(state, a, delta):
@@ -116,8 +120,11 @@ def cbTrajectory(msg):
     print "***************************************************"
 
 def cbTrackStatus(msg):
-    global tracking_status
+    global tracking_status, trajectory, robot_id
     tracking_status = msg.data
+    if len(trajectory) > 0:
+        robot_id = int(trajectory.pop()[0])
+        print "Selected Robot: ", robot_id
 
 def pixels2meter(pix, invert=True, GUI_MAX_COORD=GUI_MAX_COORD):
     x_vals = list(zip(*pix)[0])
@@ -184,8 +191,6 @@ rospy.on_shutdown(shutdown)
 rate = rospy.Rate(10)
 try:
     while(True):
-        # rospy.wait_for_message("/trajectory", PoseArray)
-        # rospy.wait_for_message("/start_tracking", Int8)
         if tracking_status == 1:
             pros_traj = pixels2meter(trajectory, invert=True, GUI_MAX_COORD=GUI_MAX_COORD)
             print pros_traj
@@ -232,11 +237,10 @@ try:
             trajectory = []
             tracking_status = None
 
-        elif (tracking_status == 2):
+        if (tracking_status == 2):
             trajectory = []
             tracking_status = None
             print "User does not want the robot to follow the trajectory"
-
 except KeyboardInterrupt:
     print "Pressed Ctrl+C and the coded is completed"
     pass
